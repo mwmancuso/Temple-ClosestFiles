@@ -12,7 +12,6 @@ import random
 import re
 import sys
 import time
-from collections import Counter
 import numpy as np
 import hashlib
 
@@ -31,9 +30,10 @@ except ImportError:
 #   hash comparisons. thus hash_len/hash_chunk is how many
 #   chances two files get to be similar based on the
 #   hash_len random ngrams calculated
-random.seed(103)
+random.seed(1036)
 ngrams = 3
-hash_len = 64
+hash_len = 32
+hash_initial_divider = 4
 
 # Generate 128 bit hash seeds to XOR with MD5 hashes. need
 # one for each hash
@@ -175,7 +175,7 @@ def main(norm_argv):
     # If hash_chunk gets to 0, we know hash_len is too
     # short to find similar files, and we abort.
     related_files_idxs = []
-    hash_chunk = hash_len
+    hash_chunk = hash_len / hash_initial_divider
     while hash_chunk > 0 and len(related_files_idxs) == 0:
         print "> testing hash_chunk of " + str(hash_chunk)
 
@@ -222,61 +222,30 @@ def main(norm_argv):
 
     print "> " + str(len(related_files_idxs)) + " hashes matched between at least two files"
 
-    if len(related_files_idxs) > 5000:
+    if len(related_files_idxs) > 62500:
         print "   ? that's a lot, this might take awhile"
 
     # Now that we have a big list of tuples where the
     # tuples hold files which are related, we can
     # generate combinations of the tuples to build a
     # list of all the comparisons we need to make.
-    # We'll also be able to determine files which match
-    # for more than one hash, and can thus use that
-    # metric to further reduce the number of comparisons
-    # we need to make.
-    # file_matches = Counter()
+    # file_matches = set()
     # for related_files in related_files_idxs:
     #     file_matches.update(itertools.combinations(sorted(related_files), 2))
     #
     # The below code is practically unreadable but does
     # the same thing as above, slightly faster:
-    file_matches = Counter([c for related_files in related_files_idxs for c in itertools.combinations(sorted(related_files), 2)])
-
-    print "> there were originally " + str(len(file_matches)) + " comparisons to make"
-
-    if len(file_matches) > 1000000:
-        print "   ? that's a lot, this might take awhile"
-
-    if hash_len / hash_chunk >= 4:
-        # Yield the max number of chunks for two files in
-        # common. We use this to filter only the most
-        # common files.
-        max_count = max(file_matches.itervalues())
-
-        print "> we're only testing the ones that matched " + str(max_count) + " times"
-
-        # If we have any files with more than one chunk
-        # matching, we can filter the list of files to
-        # compare by the max number of matching chunks
-        # calculated above. This will reduce the number
-        # of comparisons we need to make significantly,
-        # as for very similar files, most of the chunks
-        # will match.
-        file_matches = [k for (k, v) in file_matches.iteritems() if v == max_count]
-    else:
-        print "> since hash_len/hash_chunk is less than 4,"
-        print "  all files should only have one hash in common."
-        print "  Thus, we're not removing any comparisons..."
-        file_matches = file_matches.keys()
+    file_matches = list(set([c for related_files in related_files_idxs for c in itertools.combinations(sorted(related_files), 2)]))
 
     # Map the indices of the file ngrams to the set
     # of ngrams themselves. We have to do this in case
     # the parallel pool is used.
     comparisons = [(file_ngrams[c[0]], file_ngrams[c[1]]) for c in file_matches]
 
-    print "> now comparing " + str(len(comparisons)) + " similar files..."
+    print "> comparing " + str(len(comparisons)) + " similar files..."
 
-    if len(comparisons) > 1000000:
-        print "   ? that's still a lot, this might take awhile"
+    if len(comparisons) > 500000:
+        print "   ? that's a lot, this might take awhile"
 
     # Calculate the Jaccard indices of all file combos.
     # Parallel pools are very resource intensive to
@@ -293,7 +262,8 @@ def main(norm_argv):
     # Get the maximum Jaccard index and its associated
     # file indices.
     min_difference = min(difference_indices)
-    closest_files = file_matches[difference_indices.index(min_difference)]
+    closest_index = difference_indices.index(min_difference)
+    closest_files = file_matches[closest_index]
 
     print "> compared " + str(len(comparisons)) + " similar files"
     print "> average difference for similar files: " + str(np.mean(difference_indices))
