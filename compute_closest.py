@@ -103,18 +103,18 @@ def min_hash(f):
     return signature
 
 
-def jaccard_index((f1, f2)):
+def diff_index((f1, f2)):
     """
-    Calculates Jaccard index between two files. The inputs
+    Calculates difference index between two files. The inputs
     f1 and f2 must be sets, but can be either sets of ngrams
     or sets of ngram hashes. Sets of ngrams will be more
     accurate. The algorithm takes the number of the same
     elements divided by the total number of elements.
 
-    :return: a float where 0 is nothing in common, 1 is exact match
+    :return: int, how many disagreeing trigrams
     """
 
-    return float(len(f1 & f2)) / float(len(f1 | f2))
+    return len(f1.symmetric_difference(f2))
 
 
 def main(norm_argv):
@@ -289,23 +289,23 @@ def main(norm_argv):
     # thread. The higher the Jaccard index, the closer
     # the files.
     if len(comparisons) > 50000:
-        jaccard_indices = pool.map(jaccard_index, comparisons)
+        difference_indices = pool.map(diff_index, comparisons)
     else:
-        jaccard_indices = map(jaccard_index, comparisons)
+        difference_indices = map(diff_index, comparisons)
 
     # Get the maximum Jaccard index and its associated
     # file indices.
-    max_jaccard = max(jaccard_indices)
-    closest_files = file_matches[jaccard_indices.index(max_jaccard)]
+    min_difference = min(difference_indices)
+    closest_files = file_matches[difference_indices.index(min_difference)]
 
     print "> compared " + str(len(comparisons)) + " similar files"
-    print "> average jaccard index for similar files: " + str(np.mean(jaccard_indices))
+    print "> average difference for similar files: " + str(np.mean(difference_indices))
     print "- total run time: " + str(time.time() - t_total)
     print "> run time per file: " + str(float(time.time() - t_total) / float(len(files)))
     print "> est. run time for 1,000,000 files: " + str(1000000.0 * float(time.time() - t_total) / float(len(files)))
 
     # Finally, print the files:
-    print "> jaccard index of two closest files: " + str(max_jaccard)
+    print "> difference of two closest files: " + str(min_difference)
     print "> two closest files are:"
     print files[closest_files[0]]
     print files[closest_files[1]]
