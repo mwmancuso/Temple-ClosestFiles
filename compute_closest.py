@@ -67,38 +67,35 @@ def grams_per_file(file):
 
     f.close()
 
-    # Create ngrams and return them as a set
-    return set([' '.join(words[i:i + ngrams]) for i in range(0, len(words) - ngrams + 1)])
+    # Create ngrams, hash them, and return them as a set
+    if mmh3_ready:
+        return set([mmh3.hash(' '.join(words[i:i + ngrams])) for i in range(0, len(words) - ngrams + 1)])
+    else:
+        return set([int(hashlib.md5(' '.join(words[i:i + ngrams])).hexdigest(), 16)
+                    for i in range(0, len(words) - ngrams + 1)])
 
 
 def min_hash(f):
     """
-    Calculates hash_len/hash_chunk min hashes for each input
+    Calculates hash_len min hashes for each input
     set of ngrams. Each minhash will be different because
     hashseeds has 128-bit seeds which will be XORd with
     the hash.
-    :param f: set of ngrams for a file
-    :return: list of hash_len/hash_chunk minhashes
+    :param f: set of hashed ngrams for a file
+    :return: list of hash_len minhashes
     """
     signature = []
 
     if len(f) == 0:
-        return []
+        return [0 for i in range(hash_len)]
 
-    # We calculate the MD5/MMH3 sum for each ngram only once.
-    # This saves A LOT of time. We'll seed the hashes
-    # with XOR instead of inputs to MD5
-    if mmh3_ready:
-        hashes = [mmh3.hash128(s) for s in list(f)]
-    else:
-        hashes = [int(hashlib.md5(s).hexdigest(), 16) for s in list(f)]
+    signature.append(min(f))
 
-    for i in range(hash_len):
-        # Get a 128-bit seed and XOR all hashes with 'em
+    for i in range(hash_len - 1):
+        # Get a 128-bit seed and XOR all hashes with 'em,
+        # then add the minimum hash to the output
         seed = hashseeds[i]
-        seeded_hashes = [v ^ seed for v in hashes]
-
-        signature.append(min(seeded_hashes))
+        signature.append(min([v ^ seed for v in f]))
 
     return signature
 
@@ -142,7 +139,7 @@ def main(norm_argv):
         print "! need two or more files. aborting"
         return
 
-    print "> generating " + str(ngrams) + "grams..."
+    print "> generating and hashing " + str(ngrams) + "grams..."
 
     # Calculate the ngrams for each file. file_ngrams
     # will be a list of sets of ngrams for each file
