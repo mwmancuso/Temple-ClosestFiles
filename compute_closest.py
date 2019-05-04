@@ -5,7 +5,6 @@
 # Date: 4/24/19
 #
 
-import hashlib
 import itertools
 import multiprocessing
 import os
@@ -15,6 +14,7 @@ import sys
 import time
 from collections import Counter
 import numpy as np
+import hashlib
 
 # SETTINGS
 # Seed is for reproducibility
@@ -24,10 +24,9 @@ import numpy as np
 #   hash comparisons. thus hash_len/hash_chunk is how many
 #   chances two files get to be similar based on the
 #   hash_len random ngrams calculated
-random.seed(1235)
+random.seed(103)
 ngrams = 3
-hash_len = 32
-hash_chunk = 8
+hash_len = 64
 
 # Generate 128 bit hash seeds to XOR with MD5 hashes. need
 # one for each hash
@@ -82,24 +81,14 @@ def min_hash(f):
     # We calculate the MD5 sum for each ngram only once.
     # This saves A LOT of time. We'll seed the hashes
     # with XOR instead of inputs to MD5
-    hashes = map(lambda s: int(hashlib.md5(s).hexdigest(), 16), list(f))
+    hashes = [int(hashlib.md5(s).hexdigest(), 16) for s in list(f)]
 
     for i in range(hash_len):
-        # Get a 128-bit seed and XOR all of the hashes
-        # with them
+        # Get a 128-bit seed and XOR all hashes with 'em
         seed = hashseeds[i]
-        seeded_hashes = map(lambda v: v ^ seed, hashes)
+        seeded_hashes = [v ^ seed for v in hashes]
 
-        # To combine hash_chunk hashes, we sum them up
-        # into a single index of the signature.
-        # Note that we are taking the MIN of the seeded
-        # hashes, hence minhash. This will change
-        # depending on the seed, and we will thus get
-        # a random ngram for each index in the signature
-        if i % hash_chunk == 0:
-            signature.append(min(seeded_hashes))
-        else:
-            signature[i / hash_chunk] += min(seeded_hashes)
+        signature.append(min(seeded_hashes))
 
     return signature
 
@@ -123,6 +112,7 @@ def main(norm_argv):
     pool = multiprocessing.Pool()
 
     print "> starting"
+
     print "> listing files..."
 
     t_total = time.time()
@@ -146,7 +136,7 @@ def main(norm_argv):
     print "> " + str(ngrams) + "grams done"
     print "- elapsed time: " + str(time.time() - t_total)
 
-    print "> generating minhash(" + str(hash_chunk) + "/" + str(hash_len) + ")..."
+    print "> generating minhash(" + str(hash_len) + ")..."
 
     # Calculate the minhash signature for each file.
     # signatures will be a list equal in length to
@@ -158,36 +148,70 @@ def main(norm_argv):
     print "> minhashes done"
     print "- elapsed time: " + str(time.time() - t_total)
 
-    print "> analyzing similar hashes..."
+    print "> finding optimal chunk size..."
 
-    for j in [0.75, 0.8, 0.85, 0.9, 0.95, 0.99]:
+    # We need to find the best hash_chunk size, i.e.
+    # the hash_chunk that yields the fewest comparisons
+    # possible, i.e. the biggest hash_chunk size.
+    # To do this, we start with hash_chunk==hash_len
+    # and sum all of the hashes together to compare.
+    # If that doesn't yield any matches (i.e. two
+    # files that share the same hash), we cut
+    # hash_chunk in half and sum each half, then
+    # compare again. We keep doing this until we get
+    # at least two files which share a hash in common.
+    # If hash_chunk gets to 0, we know hash_len is too
+    # short to find similar files, and we abort.
+    related_files_idxs = []
+    hash_chunk = hash_len
+    while hash_chunk > 0 and len(related_files_idxs) == 0:
+        print "> testing hash_chunk of " + str(hash_chunk)
+
+        # We take every hash from every signature and add
+        # them to a dictionary, where the value is a list
+        # of files that have that hash. We can thus find
+        # any files that are similar by finding any hash
+        # with more than one file. The hashes also must
+        # appear at the same index in the signature to
+        # be considered similar.
+        all_hashes = dict()
+        for i, fname in enumerate(files):
+            for c in range(len(signatures[i]) / hash_chunk):
+                sidx_beg = c * hash_chunk
+                sidx_end = (c + 1) * hash_chunk
+                sig_hash = sum(signatures[i][sidx_beg:sidx_end])
+                if (c, sig_hash) in all_hashes:
+                    all_hashes[(c, sig_hash)].append(i)
+                else:
+                    all_hashes[(c, sig_hash)] = [i]
+
+        # Related files are any files who appear together
+        # in the all_hashes dict. Thus related_files_idxs
+        # will be a list of tuples where each item in the
+        # tuple is similar to other items in the tuple
+        related_files_idxs = [v for v in all_hashes.itervalues() if len(v) > 1]
+
+        if len(related_files_idxs) == 0:
+            hash_chunk /= 2
+
+    print "> settled on hash_chunk of " + str(hash_chunk)
+
+    for j in [0.75, 0.8, 0.85, 0.9, 0.95, 0.99, 0.995]:
         print "  ? probability of finding files with " + str(j) + " jaccard index: " \
               + str(1.0 - (1.0 - j ** hash_chunk) ** (hash_len / hash_chunk))
 
-    # We take every hash from every signature and add
-    # them to a dictionary, where the value is a list
-    # of files that have that hash. We can thus find
-    # any files that are similar by finding any hash
-    # with more than one file. The hashes also must
-    # appear at the same index in the signature to
-    # be considered similar.
-    all_hashes = dict()
-    for i, fname in enumerate(files):
-        for sidx, sig_hash in enumerate(signatures[i]):
-            if (sidx, sig_hash) in all_hashes:
-                all_hashes[(sidx, sig_hash)].append(i)
-            else:
-                all_hashes[(sidx, sig_hash)] = [i]
-
-    # Related files are any files who appear together
-    # in the all_hashes dict. Thus related_files_idxs
-    # will be a list of tuples where each item in the
-    # tuple is similar to other items in the tuple
-    related_files_idxs = filter(lambda v: len(v) > 1, all_hashes.values())
+    print "- elapsed time: " + str(time.time() - t_total)
 
     if len(related_files_idxs) == 0:
         print "! no files close enough to analyze. aborting"
         exit()
+
+    print "> analyzing similar hashes..."
+
+    print "> " + str(len(related_files_idxs)) + " hashes matched between at least two files"
+
+    if len(related_files_idxs) > 5000:
+        print "   ? that's a lot, this might take awhile"
 
     # Now that we have a big list of tuples where the
     # tuples hold files which are related, we can
@@ -197,36 +221,50 @@ def main(norm_argv):
     # for more than one hash, and can thus use that
     # metric to further reduce the number of comparisons
     # we need to make.
-    file_matches = list()
-    for related_files in related_files_idxs:
-        file_matches.extend(itertools.combinations(sorted(related_files), 2))
+    # file_matches = Counter()
+    # for related_files in related_files_idxs:
+    #     file_matches.update(itertools.combinations(sorted(related_files), 2))
+    #
+    # The below code is practically unreadable but does
+    # the same thing as above, slightly faster:
+    file_matches = Counter([c for related_files in related_files_idxs for c in itertools.combinations(sorted(related_files), 2)])
 
-    # We throw all of the comparisons into a counter,
-    # so we know which files have more than one chunk
-    # of the signature in common.
-    counts = Counter()
-    for file_match in file_matches:
-        counts[file_match] += 1
+    print "> there were originally " + str(len(file_matches)) + " comparisons to make"
 
-    # Yield the max number of chunks for two files in
-    # common. We use this to filter only the most
-    # common files.
-    max_count = max(counts.values())
+    if len(file_matches) > 1000000:
+        print "   ? that's a lot, this might take awhile"
 
-    # If we have any files with more than one chunk
-    # matching, we can filter the list of files to
-    # compare by the max number of matching chunks
-    # calculated above. This will reduce the number
-    # of comparisons we need to make significantly,
-    # as for very similar files, most of the chunks
-    # will match.
-    if max_count > 1:
-        file_matches = map(lambda (k, v): k, filter(lambda (k, v): v == max_count, counts.items()))
+    if hash_len / hash_chunk >= 4:
+        # Yield the max number of chunks for two files in
+        # common. We use this to filter only the most
+        # common files.
+        max_count = max(file_matches.itervalues())
+
+        print "> we're only testing the ones that matched " + str(max_count) + " times"
+
+        # If we have any files with more than one chunk
+        # matching, we can filter the list of files to
+        # compare by the max number of matching chunks
+        # calculated above. This will reduce the number
+        # of comparisons we need to make significantly,
+        # as for very similar files, most of the chunks
+        # will match.
+        file_matches = [k for (k, v) in file_matches.iteritems() if v == max_count]
+    else:
+        print "> since hash_len/hash_chunk is less than 4,"
+        print "  all files should only have one hash in common."
+        print "  Thus, we're not removing any comparisons..."
+        file_matches = file_matches.keys()
 
     # Map the indices of the file ngrams to the set
     # of ngrams themselves. We have to do this in case
     # the parallel pool is used.
-    comparisons = map(lambda c: (file_ngrams[c[0]], file_ngrams[c[1]]), file_matches)
+    comparisons = [(file_ngrams[c[0]], file_ngrams[c[1]]) for c in file_matches]
+
+    print "> now comparing " + str(len(comparisons)) + " similar files..."
+
+    if len(comparisons) > 1000000:
+        print "   ? that's still a lot, this might take awhile"
 
     # Calculate the Jaccard indices of all file combos.
     # Parallel pools are very resource intensive to
