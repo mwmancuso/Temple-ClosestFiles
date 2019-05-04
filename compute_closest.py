@@ -41,10 +41,10 @@ hashseeds = []
 for i in range(hash_len):
     hashseeds.append(random.randint(2 ** 127, 2 ** 128 - 1))
 
-# We match words by any word character (A-Z, a-z, 0-9 or _)
+# We match words by any word character (A-Z, a-z, 0-9, ' or _)
 # surrounded by non word characters (beginning/end of string),
 # whitespace, dashes, periods, etc.
-words_re = re.compile(r'\b([a-z0-9\-_]+)\b', re.MULTILINE | re.IGNORECASE)
+words_re = re.compile(r'\b([a-z0-9\-_\']+)\b', re.MULTILINE | re.IGNORECASE)
 
 
 def grams_per_file(file):
