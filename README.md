@@ -1,7 +1,9 @@
 # Temple-ClosestFiles
 Code that uses MinHashing to compute the two most similar files in ~O(n) time.
 
-Inspiration:
+Was written in response to professor's homework assignment challenging students to find most similar files out of database of one million.
+
+Inspiration for algorithm:
 https://medium.com/engineering-brainly/locality-sensitive-hashing-explained-304eb39291e4
 
 How it Works:
