@@ -16,6 +16,13 @@ from collections import Counter
 import numpy as np
 import hashlib
 
+mmh3_ready = False
+try:
+    import mmh3
+    mmh3_ready = True
+except ImportError:
+    pass
+
 # SETTINGS
 # Seed is for reproducibility
 # ngrams are length of ngrams to produce from files
@@ -78,10 +85,13 @@ def min_hash(f):
     if len(f) == 0:
         return []
 
-    # We calculate the MD5 sum for each ngram only once.
+    # We calculate the MD5/MMH3 sum for each ngram only once.
     # This saves A LOT of time. We'll seed the hashes
     # with XOR instead of inputs to MD5
-    hashes = [int(hashlib.md5(s).hexdigest(), 16) for s in list(f)]
+    if mmh3_ready:
+        hashes = [mmh3.hash128(s) for s in list(f)]
+    else:
+        hashes = [int(hashlib.md5(s).hexdigest(), 16) for s in list(f)]
 
     for i in range(hash_len):
         # Get a 128-bit seed and XOR all hashes with 'em
@@ -112,6 +122,11 @@ def main(norm_argv):
     pool = multiprocessing.Pool()
 
     print "> starting"
+
+    if mmh3_ready:
+        print "> using MMH3 for hashes"
+    else:
+        print "> using MD5 for hashes"
 
     print "> listing files..."
 
