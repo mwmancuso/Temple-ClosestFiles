@@ -264,6 +264,8 @@ def main(norm_argv):
     min_difference = min(difference_indices)
     closest_index = difference_indices.index(min_difference)
     closest_files = file_matches[closest_index]
+    jaccard_index = float(len(comparisons[closest_index][0] & comparisons[closest_index][1])) \
+                    / float(len(comparisons[closest_index][0] | comparisons[closest_index][1]))
 
     print "> compared " + str(len(comparisons)) + " similar files"
     print "> average difference for similar files: " + str(np.mean(difference_indices))
@@ -272,6 +274,7 @@ def main(norm_argv):
     print "> est. run time for 1,000,000 files: " + str(1000000.0 * float(time.time() - t_total) / float(len(files)))
 
     # Finally, print the files:
+    print "> jaccard index of two closest files: " + str(jaccard_index)
     print "> difference of two closest files: " + str(min_difference)
     print "> two closest files are:"
     print files[closest_files[0]]
