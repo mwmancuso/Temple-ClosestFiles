@@ -12,12 +12,15 @@ import random
 import re
 import sys
 import time
+from collections import Counter
+
 import numpy as np
 import hashlib
 
 mmh3_ready = False
 try:
     import mmh3
+
     mmh3_ready = True
 except ImportError:
     pass
@@ -47,18 +50,19 @@ for i in range(hash_len):
 words_re = re.compile(r'\b([a-z0-9\-_\']+)\b', re.MULTILINE | re.IGNORECASE)
 
 
-def grams_per_file(file):
+def min_hash(file):
     """
-    Get all ngrams for file. Returns set of distinct
-    ngrams, dependent on ngrams specified in header.
-    :param file: full filepath to file to analyze
-    :return: set of distinct ngrams in file
+    Calculates hash_len min hashes for each input
+    set of ngrams. Each minhash will be different because
+    hashseeds has 128-bit seeds which will be XORd with
+    the hash.
+    :param f: set of hashed ngrams for a file
+    :return: list of hash_len minhashes
     """
-
     try:
         f = open(file)
     except IOError:
-        return set()
+        return [0 for i in range(hash_len)]
 
     # Findall will use above regex to match any words.
     # We also convert all words to lowercase and reduce all
@@ -69,21 +73,11 @@ def grams_per_file(file):
 
     # Create ngrams, hash them, and return them as a set
     if mmh3_ready:
-        return set([mmh3.hash(' '.join(words[i:i + ngrams])) for i in range(0, len(words) - ngrams + 1)])
+        f = set([mmh3.hash(' '.join(words[i:i + ngrams])) for i in range(0, len(words) - ngrams + 1)])
     else:
-        return set([int(hashlib.md5(' '.join(words[i:i + ngrams])).hexdigest(), 16)
-                    for i in range(0, len(words) - ngrams + 1)])
+        f = set([int(hashlib.md5(' '.join(words[i:i + ngrams])).hexdigest(), 16)
+                 for i in range(0, len(words) - ngrams + 1)])
 
-
-def min_hash(f):
-    """
-    Calculates hash_len min hashes for each input
-    set of ngrams. Each minhash will be different because
-    hashseeds has 128-bit seeds which will be XORd with
-    the hash.
-    :param f: set of hashed ngrams for a file
-    :return: list of hash_len minhashes
-    """
     signature = []
 
     if len(f) == 0:
@@ -110,6 +104,30 @@ def diff_index((f1, f2)):
 
     :return: int, how many disagreeing trigrams
     """
+    try:
+        file1 = open(f1)
+        file2 = open(f2)
+    except IOError:
+        return 1000000
+
+    # Findall will use above regex to match any words.
+    # We also convert all words to lowercase and reduce all
+    # newlines to spaces to create one long string.
+    words1 = words_re.findall(file1.read())
+    words2 = words_re.findall(file2.read())
+
+    file1.close()
+    file2.close()
+
+    # Create ngrams, hash them, and return them as a set
+    if mmh3_ready:
+        f1 = set([mmh3.hash(' '.join(words1[i:i + ngrams])) for i in range(0, len(words1) - ngrams + 1)])
+        f2 = set([mmh3.hash(' '.join(words2[i:i + ngrams])) for i in range(0, len(words2) - ngrams + 1)])
+    else:
+        f1 = set([int(hashlib.md5(' '.join(words1[i:i + ngrams])).hexdigest(), 16)
+                 for i in range(0, len(words1) - ngrams + 1)])
+        f2 = set([int(hashlib.md5(' '.join(words2[i:i + ngrams])).hexdigest(), 16)
+                 for i in range(0, len(words2) - ngrams + 1)])
 
     return len(f1.symmetric_difference(f2))
 
@@ -139,13 +157,8 @@ def main(norm_argv):
         print "! need two or more files. aborting"
         return
 
-    print "> generating and hashing " + str(ngrams) + "grams..."
+    print "> using " + str(ngrams) + "grams for minhashes..."
 
-    # Calculate the ngrams for each file. file_ngrams
-    # will be a list of sets of ngrams for each file
-    file_ngrams = pool.map(grams_per_file, files)
-
-    print "> " + str(ngrams) + "grams done"
     print "- elapsed time: " + str(time.time() - t_total)
 
     print "> generating minhash(" + str(hash_len) + ")..."
@@ -155,7 +168,7 @@ def main(norm_argv):
     # the number of files. Each element will be
     # another list of hash_len/hash_chunk length
     # which holds the minhash signature of the file
-    signatures = pool.map(min_hash, file_ngrams)
+    signatures = pool.map(min_hash, files)
 
     print "> minhashes done"
     print "- elapsed time: " + str(time.time() - t_total)
@@ -235,37 +248,31 @@ def main(norm_argv):
     #
     # The below code is practically unreadable but does
     # the same thing as above, slightly faster:
-    file_matches = list(set([c for related_files in related_files_idxs for c in itertools.combinations(sorted(related_files), 2)]))
+    file_matches = list(
+        set([c for related_files in related_files_idxs for c in itertools.combinations(sorted(related_files), 2)]))
 
     # Map the indices of the file ngrams to the set
     # of ngrams themselves. We have to do this in case
     # the parallel pool is used.
-    comparisons = [(file_ngrams[c[0]], file_ngrams[c[1]]) for c in file_matches]
+    comparisons = [(files[c[0]], files[c[1]]) for c in file_matches]
 
     print "> comparing " + str(len(comparisons)) + " similar files..."
 
     if len(comparisons) > 500000:
         print "   ? that's a lot, this might take awhile"
 
-    # Calculate the Jaccard indices of all file combos.
-    # Parallel pools are very resource intensive to
-    # start up, so only invoke them if we have a large
-    # number of comparisons to make. Otherwise, just
-    # calculate all Jaccard indices using a single
-    # thread. The higher the Jaccard index, the closer
-    # the files.
-    if len(comparisons) > 50000:
-        difference_indices = pool.map(diff_index, comparisons)
-    else:
-        difference_indices = map(diff_index, comparisons)
+    # Calculate the number of different words for each pair of
+    # files. We do this in a pool because it requires significant
+    # I/O per file
+    difference_indices = pool.map(diff_index, comparisons)
 
     # Get the maximum Jaccard index and its associated
     # file indices.
     min_difference = min(difference_indices)
     closest_index = difference_indices.index(min_difference)
     closest_files = file_matches[closest_index]
-    jaccard_index = float(len(comparisons[closest_index][0] & comparisons[closest_index][1])) \
-                    / float(len(comparisons[closest_index][0] | comparisons[closest_index][1]))
+    # jaccard_index = float(len(comparisons[closest_index][0] & comparisons[closest_index][1])) \
+    #                 / float(len(comparisons[closest_index][0] | comparisons[closest_index][1]))
 
     print "> compared " + str(len(comparisons)) + " similar files"
     print "> average difference for similar files: " + str(np.mean(difference_indices))
@@ -274,7 +281,7 @@ def main(norm_argv):
     print "> est. run time for 1,000,000 files: " + str(1000000.0 * float(time.time() - t_total) / float(len(files)))
 
     # Finally, print the files:
-    print "> jaccard index of two closest files: " + str(jaccard_index)
+    # print "> jaccard index of two closest files: " + str(jaccard_index)
     print "> difference of two closest files: " + str(min_difference)
     print "> two closest files are:"
     print files[closest_files[0]]
@@ -303,11 +310,11 @@ example: compute_closest.py data/
 
 options:
  -help   --help: display this help message
-
+ 
 arguments:
  directory of files: a directory with any number of nested
      .txt files
-
+     
 man page: none\
 """
     exit()
