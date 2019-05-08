@@ -34,7 +34,8 @@ except ImportError:
 #   chances two files get to be similar based on the
 #   hash_len random ngrams calculated
 random.seed(1036)
-ngrams = 3
+ngrams = 2
+ngrams_final_cmp = 1
 hash_len = 32
 hash_initial_divider = 4
 
@@ -121,15 +122,15 @@ def diff_index((f1, f2)):
 
     # Create ngrams, hash them, and return them as a set
     if mmh3_ready:
-        f1 = set([mmh3.hash(' '.join(words1[i:i + ngrams])) for i in range(0, len(words1) - ngrams + 1)])
-        f2 = set([mmh3.hash(' '.join(words2[i:i + ngrams])) for i in range(0, len(words2) - ngrams + 1)])
+        f1 = Counter([mmh3.hash(' '.join(words1[i:i + ngrams_final_cmp])) for i in range(0, len(words1) - ngrams_final_cmp + 1)])
+        f2 = Counter([mmh3.hash(' '.join(words2[i:i + ngrams_final_cmp])) for i in range(0, len(words2) - ngrams_final_cmp + 1)])
     else:
-        f1 = set([int(hashlib.md5(' '.join(words1[i:i + ngrams])).hexdigest(), 16)
-                 for i in range(0, len(words1) - ngrams + 1)])
-        f2 = set([int(hashlib.md5(' '.join(words2[i:i + ngrams])).hexdigest(), 16)
-                 for i in range(0, len(words2) - ngrams + 1)])
+        f1 = Counter([int(hashlib.md5(' '.join(words1[i:i + ngrams_final_cmp])).hexdigest(), 16)
+                 for i in range(0, len(words1) - ngrams_final_cmp + 1)])
+        f2 = Counter([int(hashlib.md5(' '.join(words2[i:i + ngrams_final_cmp])).hexdigest(), 16)
+                 for i in range(0, len(words2) - ngrams_final_cmp + 1)])
 
-    return len(f1.symmetric_difference(f2))
+    return sum([v for k,v in (f1 - f2).items()]) + sum([v for k,v in (f2 - f1).items()])
 
 
 def main(norm_argv):
@@ -257,6 +258,7 @@ def main(norm_argv):
     comparisons = [(files[c[0]], files[c[1]]) for c in file_matches]
 
     print "> comparing " + str(len(comparisons)) + " similar files..."
+    print "> using " + str(ngrams_final_cmp) + "grams for comparisons..."
 
     if len(comparisons) > 500000:
         print "   ? that's a lot, this might take awhile"
