@@ -290,19 +290,6 @@ def main(norm_argv):
     print files[closest_files[1]]
 
 
-def chunks(l, n):
-    """
-    Get a list of lists of size n, thus the size returned
-    will be ret[ceil(l/n)][n].
-
-    :param l: original list
-    :param n: n in ret[ceil(l/n)][n]
-    :return: list of lists of size n
-    """
-    n = max(1, n)
-    return [l[i:min(i + n, len(l))] for i in xrange(0, len(l), n)]
-
-
 def show_help():
     print """\
 name: compute_closest.py
