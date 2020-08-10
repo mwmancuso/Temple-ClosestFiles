@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 #
 # Author: Matt Mancuso
@@ -76,7 +76,7 @@ def min_hash(file):
     if mmh3_ready:
         f = set([mmh3.hash(' '.join(words[i:i + ngrams])) for i in range(0, len(words) - ngrams + 1)])
     else:
-        f = set([int(hashlib.md5(' '.join(words[i:i + ngrams])).hexdigest(), 16)
+        f = set([int(hashlib.md5(' '.join(words[i:i + ngrams]).encode('utf-8')).hexdigest(), 16)
                  for i in range(0, len(words) - ngrams + 1)])
 
     signature = []
@@ -95,7 +95,7 @@ def min_hash(file):
     return signature
 
 
-def diff_index((f1, f2)):
+def diff_index(files):
     """
     Calculates difference index between two files. The inputs
     f1 and f2 must be sets, but can be either sets of ngrams
@@ -105,6 +105,8 @@ def diff_index((f1, f2)):
 
     :return: int, how many disagreeing trigrams
     """
+    f1, f2 = files
+
     try:
         file1 = open(f1)
         file2 = open(f2)
@@ -125,9 +127,9 @@ def diff_index((f1, f2)):
         f1 = Counter([mmh3.hash(' '.join(words1[i:i + ngrams_final_cmp])) for i in range(0, len(words1) - ngrams_final_cmp + 1)])
         f2 = Counter([mmh3.hash(' '.join(words2[i:i + ngrams_final_cmp])) for i in range(0, len(words2) - ngrams_final_cmp + 1)])
     else:
-        f1 = Counter([int(hashlib.md5(' '.join(words1[i:i + ngrams_final_cmp])).hexdigest(), 16)
+        f1 = Counter([int(hashlib.md5(' '.join(words1[i:i + ngrams_final_cmp]).encode('utf-8')).hexdigest(), 16)
                  for i in range(0, len(words1) - ngrams_final_cmp + 1)])
-        f2 = Counter([int(hashlib.md5(' '.join(words2[i:i + ngrams_final_cmp])).hexdigest(), 16)
+        f2 = Counter([int(hashlib.md5(' '.join(words2[i:i + ngrams_final_cmp]).encode('utf-8')).hexdigest(), 16)
                  for i in range(0, len(words2) - ngrams_final_cmp + 1)])
 
     return sum([v for k,v in (f1 - f2).items()]) + sum([v for k,v in (f2 - f1).items()])
@@ -137,14 +139,14 @@ def main(norm_argv):
     files = []
     pool = multiprocessing.Pool()
 
-    print "> starting"
+    print("> starting")
 
     if mmh3_ready:
-        print "> using MMH3 for hashes"
+        print("> using MMH3 for hashes")
     else:
-        print "> using MD5 for hashes"
+        print("> using MD5 for hashes")
 
-    print "> listing files..."
+    print("> listing files...")
 
     t_total = time.time()
 
@@ -152,17 +154,17 @@ def main(norm_argv):
     for root, directories, fs in os.walk(norm_argv[0]):
         files.extend([os.path.join(root, fname) for fname in fs if fname[-4:] == '.txt'])
 
-    print "> listed " + str(len(files)) + " files"
+    print("> listed " + str(len(files)) + " files")
 
     if len(files) < 2:
-        print "! need two or more files. aborting"
+        print("! need two or more files. aborting")
         return
 
-    print "> using " + str(ngrams) + "grams for minhashes..."
+    print("> using " + str(ngrams) + "grams for minhashes...")
 
-    print "- elapsed time: " + str(time.time() - t_total)
+    print("- elapsed time: " + str(time.time() - t_total))
 
-    print "> generating minhash(" + str(hash_len) + ")..."
+    print("> generating minhash(" + str(hash_len) + ")...")
 
     # Calculate the minhash signature for each file.
     # signatures will be a list equal in length to
@@ -171,10 +173,10 @@ def main(norm_argv):
     # which holds the minhash signature of the file
     signatures = pool.map(min_hash, files)
 
-    print "> minhashes done"
-    print "- elapsed time: " + str(time.time() - t_total)
+    print("> minhashes done")
+    print("- elapsed time: " + str(time.time() - t_total))
 
-    print "> finding optimal chunk size..."
+    print("> finding optimal chunk size...")
 
     # We need to find the best hash_chunk size, i.e.
     # the hash_chunk that yields the fewest comparisons
@@ -191,7 +193,7 @@ def main(norm_argv):
     related_files_idxs = []
     hash_chunk = hash_len / hash_initial_divider
     while hash_chunk > 0 and len(related_files_idxs) == 0:
-        print "> testing hash_chunk of " + str(hash_chunk)
+        print("> testing hash_chunk of " + str(hash_chunk))
 
         # We take every hash from every signature and add
         # them to a dictionary, where the value is a list
@@ -202,9 +204,9 @@ def main(norm_argv):
         # be considered similar.
         all_hashes = dict()
         for i, fname in enumerate(files):
-            for c in range(len(signatures[i]) / hash_chunk):
-                sidx_beg = c * hash_chunk
-                sidx_end = (c + 1) * hash_chunk
+            for c in range(int(len(signatures[i]) / hash_chunk)):
+                sidx_beg = int(c * hash_chunk)
+                sidx_end = int((c + 1) * hash_chunk)
                 sig_hash = sum(signatures[i][sidx_beg:sidx_end])
                 if (c, sig_hash) in all_hashes:
                     all_hashes[(c, sig_hash)].append(i)
@@ -215,29 +217,29 @@ def main(norm_argv):
         # in the all_hashes dict. Thus related_files_idxs
         # will be a list of tuples where each item in the
         # tuple is similar to other items in the tuple
-        related_files_idxs = [v for v in all_hashes.itervalues() if len(v) > 1]
+        related_files_idxs = [v for v in all_hashes.values() if len(v) > 1]
 
         if len(related_files_idxs) == 0:
             hash_chunk /= 2
 
-    print "> settled on hash_chunk of " + str(hash_chunk)
+    print("> settled on hash_chunk of " + str(hash_chunk))
 
     for j in [0.75, 0.8, 0.85, 0.9, 0.95, 0.99, 0.995]:
-        print "  ? probability of finding files with " + str(j) + " jaccard index: " \
-              + str(1.0 - (1.0 - j ** hash_chunk) ** (hash_len / hash_chunk))
+        print("  ? probability of finding files with " + str(j) + " jaccard index: " \
+              + str(1.0 - (1.0 - j ** hash_chunk) ** (hash_len / hash_chunk)))
 
-    print "- elapsed time: " + str(time.time() - t_total)
+    print("- elapsed time: " + str(time.time() - t_total))
 
     if len(related_files_idxs) == 0:
-        print "! no files close enough to analyze. aborting"
-        exit()
+        print("! no files close enough to analyze. aborting")
+        sys.exit()
 
-    print "> analyzing similar hashes..."
+    print("> analyzing similar hashes...")
 
-    print "> " + str(len(related_files_idxs)) + " hashes matched between at least two files"
+    print("> " + str(len(related_files_idxs)) + " hashes matched between at least two files")
 
     if len(related_files_idxs) > 62500:
-        print "   ? that's a lot, this might take awhile"
+        print("   ? that's a lot, this might take awhile")
 
     # Now that we have a big list of tuples where the
     # tuples hold files which are related, we can
@@ -257,11 +259,11 @@ def main(norm_argv):
     # the parallel pool is used.
     comparisons = [(files[c[0]], files[c[1]]) for c in file_matches]
 
-    print "> comparing " + str(len(comparisons)) + " similar files..."
-    print "> using " + str(ngrams_final_cmp) + "grams for comparisons..."
+    print("> comparing " + str(len(comparisons)) + " similar files...")
+    print("> using " + str(ngrams_final_cmp) + "grams for comparisons...")
 
     if len(comparisons) > 500000:
-        print "   ? that's a lot, this might take awhile"
+        print("   ? that's a lot, this might take awhile")
 
     # Calculate the number of different words for each pair of
     # files. We do this in a pool because it requires significant
@@ -276,22 +278,22 @@ def main(norm_argv):
     # jaccard_index = float(len(comparisons[closest_index][0] & comparisons[closest_index][1])) \
     #                 / float(len(comparisons[closest_index][0] | comparisons[closest_index][1]))
 
-    print "> compared " + str(len(comparisons)) + " similar files"
-    print "> average difference for similar files: " + str(np.mean(difference_indices))
-    print "- total run time: " + str(time.time() - t_total)
-    print "> run time per file: " + str(float(time.time() - t_total) / float(len(files)))
-    print "> est. run time for 1,000,000 files: " + str(1000000.0 * float(time.time() - t_total) / float(len(files)))
+    print("> compared " + str(len(comparisons)) + " similar files")
+    print("> average difference for similar files: " + str(np.mean(difference_indices)))
+    print("- total run time: " + str(time.time() - t_total))
+    print("> run time per file: " + str(float(time.time() - t_total) / float(len(files))))
+    print("> est. run time for 1,000,000 files: " + str(1000000.0 * float(time.time() - t_total) / float(len(files))))
 
     # Finally, print the files:
-    # print "> jaccard index of two closest files: " + str(jaccard_index)
-    print "> difference of two closest files: " + str(min_difference)
-    print "> two closest files are:"
-    print files[closest_files[0]]
-    print files[closest_files[1]]
+    # print("> jaccard index of two closest files: ") + str(jaccard_index)
+    print("> difference of two closest files: " + str(min_difference))
+    print("> two closest files are:")
+    print(files[closest_files[0]])
+    print(files[closest_files[1]])
 
 
 def show_help():
-    print """\
+    print("""\
 name: compute_closest.py
 synopsis: compute_closest.py [directory of files]
 descr: finds two most similar files in database of text files
@@ -305,17 +307,17 @@ arguments:
      .txt files
      
 man page: none\
-"""
-    exit()
+""")
+    sys.exit()
 
 
 def check_args(argv):
     if len(argv) != 1:
         show_help()
 
-    if not os.path.isdir(argv[0]):
-        print "bad directory"
-        exit()
+    if not os.path.isdir(argv[0]): 
+        print("bad directory") 
+        sys.exit()
 
     return argv
 
