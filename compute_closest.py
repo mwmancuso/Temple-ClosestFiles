@@ -17,6 +17,8 @@ from collections import Counter
 import numpy as np
 import hashlib
 
+# MMH3 is faster than MD5 at hashing.
+# Install using pip3 install mmh3.
 mmh3_ready = False
 try:
     import mmh3
@@ -72,12 +74,21 @@ def min_hash(file):
 
     f.close()
 
-    # Create ngrams, hash them, and return them as a set
+    # Create ngrams, hash them, and return them as a set.
+    # If MMH3 installed, use MMH3, otherwise use MD5. For either:
+    # 1. Loop through all words from 0 to len(words) - ngrams
+    # 2. Create ngrams by taking n words from each word (i)
+    # 3. Join ngrams with spaces and hash them
+    #    a. MD5 hashing requires encoding string as UTF-8, then
+    #       converting byte hash into a 16-bit int. MMH3 hashes
+    #       are already 16 bit ints.
+    # 4. Wrap with set() to remove duplicates
+    max_idx = len(words) - ngrams + 1
+    grams = [' '.join(words[i : i+ngrams]) for i in range(0, max_idx)]
     if mmh3_ready:
-        f = set([mmh3.hash(' '.join(words[i:i + ngrams])) for i in range(0, len(words) - ngrams + 1)])
+        f = set([mmh3.hash(gram) for gram in grams])
     else:
-        f = set([int(hashlib.md5(' '.join(words[i:i + ngrams]).encode('utf-8')).hexdigest(), 16)
-                 for i in range(0, len(words) - ngrams + 1)])
+        f = set([int(hashlib.md5(gram.encode('utf-8')).hexdigest(), 16) for gram in grams])
 
     signature = []
 
@@ -123,15 +134,23 @@ def diff_index(files):
     file2.close()
 
     # Create ngrams, hash them, and return them as a set
+    # This works exactly like the hashing algorithm in min_hash(),
+    # but Counter objects return a dictionary where the value
+    # is the number of times each key came up.
+    max_idx1 = len(words1) - ngrams_final_cmp + 1
+    grams1 = [' '.join(words1[i : i+ngrams]) for i in range(0, max_idx1)]
+    max_idx2 = len(words2) - ngrams_final_cmp + 1
+    grams2 = [' '.join(words2[i : i+ngrams]) for i in range(0, max_idx2)]
+        
     if mmh3_ready:
-        f1 = Counter([mmh3.hash(' '.join(words1[i:i + ngrams_final_cmp])) for i in range(0, len(words1) - ngrams_final_cmp + 1)])
-        f2 = Counter([mmh3.hash(' '.join(words2[i:i + ngrams_final_cmp])) for i in range(0, len(words2) - ngrams_final_cmp + 1)])
+        f1 = Counter([mmh3.hash(gram) for gram in grams1])
+        f2 = Counter([mmh3.hash(gram) for gram in grams2])
     else:
-        f1 = Counter([int(hashlib.md5(' '.join(words1[i:i + ngrams_final_cmp]).encode('utf-8')).hexdigest(), 16)
-                 for i in range(0, len(words1) - ngrams_final_cmp + 1)])
-        f2 = Counter([int(hashlib.md5(' '.join(words2[i:i + ngrams_final_cmp]).encode('utf-8')).hexdigest(), 16)
-                 for i in range(0, len(words2) - ngrams_final_cmp + 1)])
+        f1 = Counter([int(hashlib.md5(gram.encode('utf-8')).hexdigest(), 16) for gram in grams1])
+        f2 = Counter([int(hashlib.md5(gram.encode('utf-8')).hexdigest(), 16) for gram in grams2])
 
+    # This calculates the total number of ngrams in f1 that aren't
+    # in f2, and vice-versa, then sums them up for the total diff
     return sum([v for k,v in (f1 - f2).items()]) + sum([v for k,v in (f2 - f1).items()])
 
 
